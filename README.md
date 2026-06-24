@@ -247,15 +247,13 @@ Generated tones use the Web Audio API. The settings panel can toggle sound, shor
 
 ## 📸 Screenshots
 
-[Add screenshot here]
+
 
 ---
 
 ## 🌐 Live Demo
 
 [Play Chain Reaction here](https://YOUR_USERNAME.github.io/chain-reaction/)
-
-Note: because this is a Next.js project, confirm the deployment target before publishing. GitHub Pages may require static export configuration, while platforms such as Vercel can run the app with the current Next.js setup.
 
 ---
 
@@ -294,18 +292,13 @@ npm run lint
 
 ---
 
-## 📜 License
-
-This project is intended to be released under the **MIT License**. Add a `LICENSE` file before publishing if you want others to reuse or contribute to the project.
-
----
 
 ## 👨‍💻 Authors
 
 | Name | GitHub |
 | ---- | ------ |
-| [Add your name here] | [@YOUR_USERNAME](https://github.com/YOUR_USERNAME) |
-
+| [Hriday Shah] | [Hridayshah18](https://github.com/Hridayshah18) |
+| [Hriday Shah] | [shethmokshesh08-jpg](https://github.com/shethmokshesh08-jpg) |
 ---
 
 ## 🙌 Acknowledgments
@@ -315,13 +308,3 @@ This project is intended to be released under the **MIT License**. Add a `LICENS
 * Classic grid-based strategy games and chain-reaction board mechanics.
 
 ---
-
-## ✅ Manual Edits Before Publishing
-
-* Replace `YOUR_USERNAME`.
-* Add a real screenshot.
-* Add or confirm the GitHub Pages live demo link.
-* Confirm the author name.
-* Confirm the license and add a `LICENSE` file if needed.
-* Test all README links.
-* Make sure screenshots and live demo links are not inside code blocks.
