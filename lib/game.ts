@@ -135,67 +135,165 @@ export function winnerFor(board: Board, turns: number): Player | null {
   return null;
 }
 
-function positionalValue(size: number, row: number, col: number) {
-  return neighbors(size, row, col).length * 0.65;
+export function getValidMoves(board: Board, player: Player, hasPlaced = true): Point[] {
+  return legalMoves(board, player, hasPlaced);
 }
 
-function evaluate(board: Board, player: Player): number {
-  const opponent = otherPlayer(player);
+export function simulateMove(board: Board, move: Point, player: Player): MoveResult {
+  return resolveMove(board, move.row, move.col, player);
+}
+
+function randomItem<T>(items: T[]): T {
+  return items[Math.floor(Math.random() * items.length)];
+}
+
+function positionValue(size: number, row: number, col: number) {
+  const edgeCount = Number(row === 0 || row === size - 1) + Number(col === 0 || col === size - 1);
+  return edgeCount === 2 ? 2.2 : edgeCount === 1 ? 1.15 : 0;
+}
+
+function adjacentCells(board: Board, row: number, col: number): Cell[] {
+  return neighbors(board.length, row, col).map((point) => board[point.row][point.col]);
+}
+
+function adjacentOwned(board: Board, row: number, col: number, player: Player) {
+  return adjacentCells(board, row, col).filter((cell) => cell.owner === player);
+}
+
+function adjacentCritical(board: Board, row: number, col: number, player: Player) {
+  return adjacentOwned(board, row, col, player).filter((cell) => cell.count >= capacity() - 1).length;
+}
+
+function adjacentPressure(board: Board, row: number, col: number, player: Player) {
+  return adjacentOwned(board, row, col, player).reduce((score, cell) => score + cell.count, 0);
+}
+
+export function evaluateBoard(board: Board, aiPlayer: Player, humanPlayer = otherPlayer(aiPlayer)): number {
   let score = 0;
+
   for (let row = 0; row < board.length; row += 1) {
     for (let col = 0; col < board.length; col += 1) {
       const cell = board[row][col];
       if (!cell.owner) continue;
-      const sign = cell.owner === player ? 1 : -1;
-      const critical = cell.count === capacity() - 1 ? 2.6 : 0;
-      score += sign * (cell.count * 1.2 + positionalValue(board.length, row, col) + critical);
-      if (cell.owner === player) {
-        for (const near of neighbors(board.length, row, col)) {
-          const adjacent = board[near.row][near.col];
-          if (adjacent.owner === opponent && adjacent.count === capacity() - 1) score -= 1.6;
-        }
-      }
+
+      const sign = cell.owner === aiPlayer ? 1 : -1;
+      const criticalBonus = cell.count >= capacity() - 1 ? 5.2 : 0;
+      const ownedNeighbors = adjacentOwned(board, row, col, cell.owner).length;
+      const enemyCritical = adjacentCritical(board, row, col, otherPlayer(cell.owner));
+
+      score += sign * (
+        9 +
+        cell.count * 2.4 +
+        criticalBonus +
+        positionValue(board.length, row, col) +
+        ownedNeighbors * 0.55 -
+        enemyCritical * 4.4
+      );
     }
   }
+
+  score += (countCells(board, aiPlayer) - countCells(board, humanPlayer)) * 5.5;
+  score += (countOrbs(board, aiPlayer) - countOrbs(board, humanPlayer)) * 1.6;
   return score;
 }
 
-function rankMoves(board: Board, player: Player, hasPlaced = true): { move: Point; score: number }[] {
-  return legalMoves(board, player, hasPlaced)
-    .map((move) => {
-      const result = resolveMove(board, move.row, move.col, player);
-      const tactical = result.exploded * 4.5 + result.captured * 6;
-      return { move, score: evaluate(result.final, player) + tactical };
-    })
+function immediateTacticalValue(board: Board, move: Point, player: Player, result: MoveResult) {
+  const opponent = otherPlayer(player);
+  const beforeCell = board[move.row][move.col];
+  const nearOpponentPressure = adjacentPressure(board, move.row, move.col, opponent);
+  const nearOpponentCritical = adjacentCritical(board, move.row, move.col, opponent);
+  const nearOwnCritical = adjacentCritical(board, move.row, move.col, player);
+  const reinforcement = beforeCell.owner === player ? beforeCell.count * 2.8 : 0;
+  const triggerBonus = result.exploded > 0 ? 18 + result.exploded * 7 : 0;
+
+  return (
+    triggerBonus +
+    result.captured * 15 +
+    nearOwnCritical * 4.5 +
+    nearOpponentPressure * 1.2 +
+    reinforcement +
+    positionValue(board.length, move.row, move.col) -
+    nearOpponentCritical * 8
+  );
+}
+
+function opponentReplyThreat(board: Board, opponent: Player) {
+  const replies = getValidMoves(board, opponent, true);
+  if (!replies.length) return 0;
+
+  return Math.max(...replies.map((reply) => {
+    const result = simulateMove(board, reply, opponent);
+    const player = otherPlayer(opponent);
+    const elimination = countCells(result.final, player) === 0 && countCells(result.final, opponent) > 0 ? 240 : 0;
+    return result.exploded * 12 + result.captured * 18 + evaluateBoard(result.final, opponent, player) * 0.38 + elimination;
+  }));
+}
+
+export function wouldBeDangerousMove(board: Board, move: Point, player: Player) {
+  const result = simulateMove(board, move, player);
+  const opponent = otherPlayer(player);
+  const replyThreat = opponentReplyThreat(result.final, opponent);
+  const lostControl = countCells(result.final, player) < countCells(board, player);
+  return replyThreat > 58 || lostControl;
+}
+
+export function scoreMove(board: Board, move: Point, difficulty: Difficulty, player: Player = "blue") {
+  const opponent = otherPlayer(player);
+  const result = simulateMove(board, move, player);
+  const boardGain = evaluateBoard(result.final, player, opponent) - evaluateBoard(board, player, opponent);
+  const tactical = immediateTacticalValue(board, move, player, result);
+  const replyThreat = opponentReplyThreat(result.final, opponent);
+  const winNow = countCells(result.final, opponent) === 0 && countCells(result.final, player) > 0 ? 420 : 0;
+
+  if (difficulty === "medium") {
+    // Medium plays a one-ply heuristic: improve control, pressure weak enemy cells, and avoid obvious replies.
+    return boardGain * 0.85 + tactical - replyThreat * 0.42 + winNow;
+  }
+
+  if (difficulty === "hard") {
+    // Hard simulates the move and then prices in the opponent's strongest visible reply.
+    const ownCritical = result.final.flat().filter((cell) => cell.owner === player && cell.count >= capacity() - 1).length;
+    const enemyCritical = result.final.flat().filter((cell) => cell.owner === opponent && cell.count >= capacity() - 1).length;
+    return boardGain * 1.2 + tactical * 1.15 + ownCritical * 4 - enemyCritical * 5 - replyThreat * 0.78 + winNow;
+  }
+
+  return boardGain * 0.35 + tactical * 0.25 - replyThreat * 0.15;
+}
+
+function rankedMoves(board: Board, player: Player, hasPlaced: boolean, difficulty: Difficulty): { move: Point; score: number }[] {
+  return getValidMoves(board, player, hasPlaced)
+    .map((move) => ({ move, score: scoreMove(board, move, difficulty, player) }))
     .sort((a, b) => b.score - a.score);
 }
 
-export function chooseAiMove(board: Board, difficulty: Difficulty, hasPlaced = true): Point {
-  const ranked = rankMoves(board, "blue", hasPlaced);
+function chooseEasyMove(board: Board, player: Player, hasPlaced: boolean): Point {
+  const moves = getValidMoves(board, player, hasPlaced);
+  if (!moves.length) return { row: 0, col: 0 };
+
+  if (!hasPlaced) return randomItem(moves);
+
+  const safeMoves = moves.filter((move) => !wouldBeDangerousMove(board, move, player));
+  return randomItem(safeMoves.length ? safeMoves : moves);
+}
+
+function chooseMediumMove(board: Board, player: Player, hasPlaced: boolean): Point {
+  const ranked = rankedMoves(board, player, hasPlaced, "medium");
   if (!ranked.length) return { row: 0, col: 0 };
 
-  if (difficulty === "easy") {
-    const pool = ranked.slice(0, Math.max(8, Math.ceil(ranked.length * 0.65)));
-    return pool[Math.floor(Math.random() * pool.length)].move;
-  }
+  const pool = ranked.slice(0, Math.min(5, ranked.length));
+  return Math.random() < 0.74 ? pool[0].move : randomItem(pool).move;
+}
 
-  if (difficulty === "medium") {
-    const pool = ranked.slice(0, Math.min(4, ranked.length));
-    const roll = Math.random();
-    return pool[roll < 0.68 ? 0 : Math.min(1 + Math.floor(Math.random() * 3), pool.length - 1)].move;
-  }
+function chooseHardMove(board: Board, player: Player, hasPlaced: boolean): Point {
+  const ranked = rankedMoves(board, player, hasPlaced, "hard");
+  if (!ranked.length) return { row: 0, col: 0 };
 
-  const candidates = ranked.slice(0, Math.min(8, ranked.length));
-  const lookahead = candidates.map(({ move, score }) => {
-    const afterBlue = resolveMove(board, move.row, move.col, "blue").final;
-    const redReply = rankMoves(afterBlue, "red").slice(0, 8);
-    const worstReply = redReply.length
-      ? Math.max(...redReply.map(({ move: reply }) => evaluate(resolveMove(afterBlue, reply.row, reply.col, "red").final, "red")))
-      : 0;
-    return { move, score: score - worstReply * 0.68 };
-  }).sort((a, b) => b.score - a.score);
+  const pool = ranked.slice(0, Math.min(3, ranked.length));
+  return Math.random() < 0.88 ? pool[0].move : randomItem(pool).move;
+}
 
-  // A little imperfection keeps the strongest mode challenging without becoming clinical.
-  const pick = Math.random() < 0.82 ? 0 : Math.min(1 + Math.floor(Math.random() * 2), lookahead.length - 1);
-  return lookahead[pick].move;
+export function chooseAiMove(board: Board, difficulty: Difficulty, hasPlaced = true): Point {
+  if (difficulty === "easy") return chooseEasyMove(board, "blue", hasPlaced);
+  if (difficulty === "medium") return chooseMediumMove(board, "blue", hasPlaced);
+  return chooseHardMove(board, "blue", hasPlaced);
 }
