@@ -247,13 +247,14 @@ Generated tones use the Web Audio API. The settings panel can toggle sound, shor
 
 ## 📸 Screenshots
 
+<img width="1896" height="1078" alt="image" src="https://github.com/user-attachments/assets/d6584529-780b-47cd-8a1d-21369726ba0c" />
 
 
 ---
 
 ## 🌐 Live Demo
 
-[Play Chain Reaction here](https://YOUR_USERNAME.github.io/chain-reaction/)
+[[Play Chain Reaction here](https://YOUR_USERNAME.github.io/chain-reaction/)](https://expressit.online/games/chain-reaction)
 
 ---
 
